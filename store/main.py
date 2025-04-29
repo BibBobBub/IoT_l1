@@ -123,45 +123,108 @@ async def send_data_to_subscribers(user_id: int, data):
 
 # FastAPI CRUDL endpoints
 
-
 @app.post("/processed_agent_data/")
 async def create_processed_agent_data(data: List[ProcessedAgentData]):
-    # Insert data to database
-    # Send data to subscribers
-    pass
+    session = SessionLocal()
+    inserted_ids = []
+    try:
+        for item in data:
+            new_data = {
+                "road_state": item.road_state,
+                "user_id": item.agent_data.user_id,
+                "x": item.agent_data.accelerometer.x,
+                "y": item.agent_data.accelerometer.y,
+                "z": item.agent_data.accelerometer.z,
+                "latitude": item.agent_data.gps.latitude,
+                "longitude": item.agent_data.gps.longitude,
+                "timestamp": item.agent_data.timestamp,
+            }
+            result = session.execute(processed_agent_data.insert().values(**new_data))
+            inserted_id = result.inserted_primary_key[0]
+            inserted_ids.append(inserted_id)
+            await send_data_to_subscribers(item.agent_data.user_id, {**new_data, "id": inserted_id})
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
+    return {"inserted_ids": inserted_ids}
 
 
-@app.get(
-    "/processed_agent_data/{processed_agent_data_id}",
-    response_model=ProcessedAgentDataInDB,
-)
+@app.get("/processed_agent_data/{processed_agent_data_id}", response_model=ProcessedAgentDataInDB)
 def read_processed_agent_data(processed_agent_data_id: int):
-    # Get data by id
-    pass
+    session = SessionLocal()
+    try:
+        query = select(processed_agent_data).where(processed_agent_data.c.id == processed_agent_data_id)
+        result = session.execute(query).fetchone()
+        if result is None:
+            raise HTTPException(status_code=404, detail="ProcessedAgentData not found")
+        return ProcessedAgentDataInDB(**result._mapping)
+    finally:
+        session.close()
 
 
-@app.get("/processed_agent_data/", response_model=list[ProcessedAgentDataInDB])
+@app.get("/processed_agent_data/", response_model=List[ProcessedAgentDataInDB])
 def list_processed_agent_data():
-    # Get list of data
-    pass
+    session = SessionLocal()
+    try:
+        query = select(processed_agent_data)
+        results = session.execute(query).fetchall()
+        return [ProcessedAgentDataInDB(**row._mapping) for row in results]
+    finally:
+        session.close()
 
 
-@app.put(
-    "/processed_agent_data/{processed_agent_data_id}",
-    response_model=ProcessedAgentDataInDB,
-)
+@app.put("/processed_agent_data/{processed_agent_data_id}", response_model=ProcessedAgentDataInDB)
 def update_processed_agent_data(processed_agent_data_id: int, data: ProcessedAgentData):
-    # Update data
-    pass
+    session = SessionLocal()
+    try:
+        query = select(processed_agent_data).where(processed_agent_data.c.id == processed_agent_data_id)
+        result = session.execute(query).fetchone()
+        if result is None:
+            raise HTTPException(status_code=404, detail="ProcessedAgentData not found")
+        update_values = {
+            "road_state": data.road_state,
+            "user_id": data.agent_data.user_id,
+            "x": data.agent_data.accelerometer.x,
+            "y": data.agent_data.accelerometer.y,
+            "z": data.agent_data.accelerometer.z,
+            "latitude": data.agent_data.gps.latitude,
+            "longitude": data.agent_data.gps.longitude,
+            "timestamp": data.agent_data.timestamp,
+        }
+        session.execute(
+            processed_agent_data.update()
+            .where(processed_agent_data.c.id == processed_agent_data_id)
+            .values(**update_values)
+        )
+        session.commit()
+        return ProcessedAgentDataInDB(id=processed_agent_data_id, **update_values)
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
 
 
-@app.delete(
-    "/processed_agent_data/{processed_agent_data_id}",
-    response_model=ProcessedAgentDataInDB,
-)
+@app.delete("/processed_agent_data/{processed_agent_data_id}", response_model=ProcessedAgentDataInDB)
 def delete_processed_agent_data(processed_agent_data_id: int):
-    # Delete by id
-    pass
+    session = SessionLocal()
+    try:
+        query = select(processed_agent_data).where(processed_agent_data.c.id == processed_agent_data_id)
+        result = session.execute(query).fetchone()
+        if result is None:
+            raise HTTPException(status_code=404, detail="ProcessedAgentData not found")
+        session.execute(processed_agent_data.delete().where(processed_agent_data.c.id == processed_agent_data_id))
+        session.commit()
+        return ProcessedAgentDataInDB(**result._mapping)
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        session.close()
+
 
 
 if __name__ == "__main__":
